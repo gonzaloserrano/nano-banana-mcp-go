@@ -1,24 +1,14 @@
-node_modules/
-dist/
+# Binary
+nano-banana-mcp
+
+# Generated images
+generated_imgs/
+
+# Environment
 .env
-.env.local
-.env.*.local
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+
+# OS files
 .DS_Store
-.vscode/
 *.swp
 *.swo
 *~
-
-# Configuration files with sensitive data
-.nano-banana-config.json
-
-# Test files
-coverage/
-.nyc_output/
-
-# Build files
-*.tsbuildinfo
