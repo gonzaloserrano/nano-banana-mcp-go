@@ -11,18 +11,14 @@ A simple MCP server for AI image generation using Google Gemini.
 
 1. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
 
-2. Build the server:
-```bash
-go build -o nano-banana-mcp .
-```
-
-3. Configure your MCP client (e.g., Claude Code):
+2. Configure your MCP client (e.g., Claude Code):
 
 ```json
 {
   "mcpServers": {
     "nano-banana": {
-      "command": "/path/to/nano-banana-mcp",
+      "command": "go",
+      "args": ["run", "github.com/ConechoAI/nano-banana-mcp@latest"],
       "env": {
         "GEMINI_API_KEY": "your-api-key"
       }
