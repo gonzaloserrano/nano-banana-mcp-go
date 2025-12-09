@@ -1,3 +1,3 @@
-module github.com/ConechoAI/nano-banana-mcp
+module github.com/gonzaloserrano/nano-banana-mcp
 
 go 1.24.7
