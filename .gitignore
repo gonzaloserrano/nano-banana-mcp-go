@@ -1,14 +1,2 @@
-# Binary
-nano-banana-mcp
-
-# Generated images
-generated_imgs/
-
-# Environment
-.env
-
-# OS files
-.DS_Store
-*.swp
-*.swo
-*~
+nano-banana-mcp-go
+generated/

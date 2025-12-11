@@ -9,15 +9,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewServer(t *testing.T) {
-	s := NewServer("test-api-key", "custom-output")
-	require.NotNil(t, s)
-	require.Equal(t, "test-api-key", s.apiKey)
-	require.Equal(t, "custom-output", s.outputDir)
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	return &Server{
+		client:    nil, // nil client for unit tests that don't call Gemini
+		outputDir: defaultOutputDir,
+	}
+}
+
+func newTestServerWithOutputDir(t *testing.T, outputDir string) *Server {
+	t.Helper()
+	return &Server{
+		client:    nil,
+		outputDir: outputDir,
+	}
 }
 
 func TestHandleInitialize(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 	req := &JSONRPCRequest{
 		JSONRPC: "2.0",
 		ID:      1,
@@ -40,7 +49,7 @@ func TestHandleInitialize(t *testing.T) {
 }
 
 func TestHandleListTools(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 	req := &JSONRPCRequest{
 		JSONRPC: "2.0",
 		ID:      2,
@@ -65,7 +74,7 @@ func TestHandleListTools(t *testing.T) {
 }
 
 func TestHandleCallToolUnknown(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 	params, _ := json.Marshal(CallToolParams{
 		Name:      "unknown_tool",
 		Arguments: map[string]any{},
@@ -86,7 +95,7 @@ func TestHandleCallToolUnknown(t *testing.T) {
 }
 
 func TestHandleUnknownMethod(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 	req := &JSONRPCRequest{
 		JSONRPC: "2.0",
 		ID:      4,
@@ -102,7 +111,7 @@ func TestHandleUnknownMethod(t *testing.T) {
 }
 
 func TestHandleNotification(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 	req := &JSONRPCRequest{
 		JSONRPC: "2.0",
 		ID:      nil,
@@ -115,7 +124,7 @@ func TestHandleNotification(t *testing.T) {
 }
 
 func TestGenerateImageMissingPrompt(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 
 	testCases := []struct {
 		name string
@@ -149,7 +158,7 @@ func TestGenerateImageMissingPrompt(t *testing.T) {
 }
 
 func TestEditImageMissingParams(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 
 	testCases := []struct {
 		name        string
@@ -188,7 +197,7 @@ func TestEditImageMissingParams(t *testing.T) {
 }
 
 func TestEditImagePathTraversal(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 
 	// These paths contain ".." after filepath.Clean and should be rejected
 	testCases := []struct {
@@ -222,7 +231,7 @@ func TestEditImagePathTraversal(t *testing.T) {
 }
 
 func TestEditImageFileNotFound(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 
 	_, err := s.editImage(map[string]any{
 		"image_path": "/nonexistent/image.png",
@@ -257,7 +266,7 @@ func TestGetMimeType(t *testing.T) {
 }
 
 func TestSaveImage(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 
 	// Create temp directory for test
 	tmpDir := t.TempDir()
@@ -286,7 +295,7 @@ func TestSaveImage(t *testing.T) {
 }
 
 func TestSaveImageInvalidBase64(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
@@ -303,7 +312,7 @@ func TestSaveImageInvalidBase64(t *testing.T) {
 }
 
 func TestHandleCallToolInvalidParams(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 	req := &JSONRPCRequest{
 		JSONRPC: "2.0",
 		ID:      5,
@@ -319,7 +328,7 @@ func TestHandleCallToolInvalidParams(t *testing.T) {
 }
 
 func TestOutputDirCreation(t *testing.T) {
-	s := NewServer("test-key", defaultOutputDir)
+	s := newTestServer(t)
 
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
@@ -349,7 +358,7 @@ func TestOutputDirCreation(t *testing.T) {
 
 func TestCustomOutputDir(t *testing.T) {
 	customDir := "my-custom-images"
-	s := NewServer("test-key", customDir)
+	s := newTestServerWithOutputDir(t, customDir)
 
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()

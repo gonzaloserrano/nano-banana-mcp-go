@@ -4,16 +4,16 @@ package main
 
 import (
 	"bufio"
-	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"google.golang.org/genai"
 )
 
 const (
@@ -21,9 +21,7 @@ const (
 	serverName      = "nano-banana-mcp"
 	serverVersion   = "2.0.0"
 
-	geminiModel   = "gemini-2.5-flash-image"
-	geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models"
-
+	geminiModel      = "gemini-2.5-flash-image"
 	defaultOutputDir = "generated"
 )
 
@@ -103,47 +101,15 @@ type Content struct {
 	MimeType string `json:"mimeType,omitempty"`
 }
 
-// Gemini API types
-type GeminiRequest struct {
-	Contents         []GeminiContent   `json:"contents"`
-	GenerationConfig *GenerationConfig `json:"generationConfig,omitempty"`
-}
-
-type GeminiContent struct {
-	Parts []GeminiPart `json:"parts"`
-}
-
-type GeminiPart struct {
-	Text       string      `json:"text,omitempty"`
-	InlineData *InlineData `json:"inlineData,omitempty"`
-}
-
-type InlineData struct {
-	MimeType string `json:"mimeType"`
-	Data     string `json:"data"`
-}
-
-type GenerationConfig struct {
-	ResponseModalities []string `json:"responseModalities,omitempty"`
-}
-
-type GeminiResponse struct {
-	Candidates []Candidate `json:"candidates"`
-}
-
-type Candidate struct {
-	Content GeminiContent `json:"content"`
-}
-
 // Server
 type Server struct {
-	apiKey    string
+	client    *genai.Client
 	outputDir string
 }
 
-func NewServer(apiKey, outputDir string) *Server {
+func NewServer(client *genai.Client, outputDir string) *Server {
 	return &Server{
-		apiKey:    apiKey,
+		client:    client,
 		outputDir: outputDir,
 	}
 }
@@ -277,10 +243,19 @@ func (s *Server) generateImage(args map[string]any) (CallToolResult, error) {
 		return CallToolResult{}, fmt.Errorf("prompt is required")
 	}
 
-	// Call Gemini API
-	imageData, textResponse, err := s.callGemini(prompt, nil)
+	ctx := context.Background()
+	result, err := s.client.Models.GenerateContent(ctx, geminiModel, genai.Text(prompt), nil)
 	if err != nil {
-		return CallToolResult{}, err
+		return CallToolResult{}, fmt.Errorf("API request failed: %w", err)
+	}
+
+	var imageData, textResponse string
+	for _, part := range result.Candidates[0].Content.Parts {
+		if part.Text != "" {
+			textResponse += part.Text
+		} else if part.InlineData != nil {
+			imageData = base64.StdEncoding.EncodeToString(part.InlineData.Data)
+		}
 	}
 
 	if imageData == "" {
@@ -293,7 +268,6 @@ func (s *Server) generateImage(args map[string]any) (CallToolResult, error) {
 		}, nil
 	}
 
-	// Save image
 	filePath, err := s.saveImage(imageData, "generated")
 	if err != nil {
 		return CallToolResult{}, fmt.Errorf("failed to save image: %w", err)
@@ -318,27 +292,37 @@ func (s *Server) editImage(args map[string]any) (CallToolResult, error) {
 		return CallToolResult{}, fmt.Errorf("prompt is required")
 	}
 
-	// Validate path to prevent directory traversal
 	cleanPath := filepath.Clean(imagePath)
 	if strings.Contains(cleanPath, "..") {
 		return CallToolResult{}, fmt.Errorf("invalid image path: directory traversal not allowed")
 	}
 
-	// Read source image
 	imageBytes, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return CallToolResult{}, fmt.Errorf("failed to read image: %w", err)
 	}
 
-	sourceImage := &InlineData{
-		MimeType: getMimeType(cleanPath),
-		Data:     base64.StdEncoding.EncodeToString(imageBytes),
+	ctx := context.Background()
+	result, err := s.client.Models.GenerateContent(ctx, geminiModel,
+		[]*genai.Content{{
+			Parts: []*genai.Part{
+				{InlineData: &genai.Blob{MIMEType: getMimeType(cleanPath), Data: imageBytes}},
+				{Text: prompt},
+			},
+		}},
+		nil,
+	)
+	if err != nil {
+		return CallToolResult{}, fmt.Errorf("API request failed: %w", err)
 	}
 
-	// Call Gemini API
-	imageData, textResponse, err := s.callGemini(prompt, sourceImage)
-	if err != nil {
-		return CallToolResult{}, err
+	var imageData, textResponse string
+	for _, part := range result.Candidates[0].Content.Parts {
+		if part.Text != "" {
+			textResponse += part.Text
+		} else if part.InlineData != nil {
+			imageData = base64.StdEncoding.EncodeToString(part.InlineData.Data)
+		}
 	}
 
 	if imageData == "" {
@@ -351,7 +335,6 @@ func (s *Server) editImage(args map[string]any) (CallToolResult, error) {
 		}, nil
 	}
 
-	// Save image
 	filePath, err := s.saveImage(imageData, "edited")
 	if err != nil {
 		return CallToolResult{}, fmt.Errorf("failed to save image: %w", err)
@@ -363,64 +346,6 @@ func (s *Server) editImage(args map[string]any) (CallToolResult, error) {
 	}
 
 	return CallToolResult{Content: content}, nil
-}
-
-func (s *Server) callGemini(prompt string, sourceImage *InlineData) (imageData, textResponse string, err error) {
-	parts := []GeminiPart{}
-
-	if sourceImage != nil {
-		parts = append(parts, GeminiPart{InlineData: sourceImage})
-	}
-	parts = append(parts, GeminiPart{Text: prompt})
-
-	reqBody := GeminiRequest{
-		Contents: []GeminiContent{{Parts: parts}},
-		GenerationConfig: &GenerationConfig{
-			ResponseModalities: []string{"TEXT", "IMAGE"},
-		},
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/%s:generateContent?key=%s", geminiBaseURL, geminiModel, s.apiKey)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(jsonData))
-	if err != nil {
-		return "", "", fmt.Errorf("API request failed: %w", err)
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var geminiResp GeminiResponse
-	if err := json.Unmarshal(body, &geminiResp); err != nil {
-		return "", "", fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	// Extract image and text from response
-	for _, candidate := range geminiResp.Candidates {
-		for _, part := range candidate.Content.Parts {
-			if part.InlineData != nil && part.InlineData.Data != "" {
-				imageData = part.InlineData.Data
-			}
-			if part.Text != "" {
-				textResponse += part.Text
-			}
-		}
-	}
-
-	return imageData, textResponse, nil
 }
 
 func (s *Server) saveImage(base64Data, prefix string) (string, error) {
@@ -490,16 +415,17 @@ func (s *Server) Run() error {
 		}
 
 		fmt.Println(string(respJSON))
-		os.Stdout.Sync()
+		_ = os.Stdout.Sync()
 	}
 
 	return scanner.Err()
 }
 
 func main() {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "GEMINI_API_KEY environment variable is required")
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create Gemini client: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -508,7 +434,7 @@ func main() {
 		outputDir = os.Args[1]
 	}
 
-	server := NewServer(apiKey, outputDir)
+	server := NewServer(client, outputDir)
 	if err := server.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
