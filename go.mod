@@ -1,4 +1,4 @@
-module github.com/gonzaloserrano/nano-banana-mcp
+module github.com/gonzaloserrano/nano-banana-mcp-go
 
 go 1.25.5
 

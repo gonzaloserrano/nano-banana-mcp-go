@@ -1,6 +1,8 @@
-# Nano Banana MCP
+# Nano Banana MCP Go
 
-MCP server for AI image generation/editing using Google Gemini.
+An MCP server for AI image generation/editing using Google Gemini.
+
+Go port of https://github.com/ConechoAI/Nano-Banana-MCP and https://github.com/TinDang97/Nano-Banana-MCP.
 
 ## Setup
 
@@ -13,7 +15,7 @@ MCP server for AI image generation/editing using Google Gemini.
   "mcpServers": {
     "nano-banana": {
       "command": "go",
-      "args": ["run", "github.com/gonzaloserrano/nano-banana-mcp@latest"],
+      "args": ["run", "github.com/gonzaloserrano/nano-banana-mcp-go@latest"],
       "env": {
         "GEMINI_API_KEY": "your-api-key"
       }
